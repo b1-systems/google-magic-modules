@@ -1,0 +1,53 @@
+name: go:release
+
+on:
+  push:
+    tags:
+    - 'v*'
+
+jobs:
+  go-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout commit
+      uses: actions/checkout@v4
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v3
+    - name: Build terraform-provider-google
+      env:
+        VERSION: ga
+      run: |-
+        export GOBIN=$(go env GOBIN)
+        export GOPATH=$(go env GOPATH)
+
+        export PATH=$PATH:$GOBIN
+        export OUTPUT_PATH=${RUNNER_TEMP}/terraform-provider-google
+
+        mkdir -p ${OUTPUT_PATH}
+        go install golang.org/x/tools/cmd/goimports@latest
+        make
+
+        # Work around issues with dependencies getting not detected if not installed
+        cd ${OUTPUT_PATH}
+        go mod download
+
+        cd ${GITHUB_WORKSPACE}
+        make
+
+        cd ${OUTPUT_PATH}
+        CGO_ENABLED=0 GOOS=$(go env GOOS) GOARCH=$(go env GOARCH) go build \
+        -a \
+        -v \
+        -ldflags "$LD_FLAGS" \
+        -o ${GITHUB_WORKSPACE}/terraform-provider-google \
+        main.go
+    - name: Store generated binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: terraform-provider-google.bin
+        path: terraform-provider-google
